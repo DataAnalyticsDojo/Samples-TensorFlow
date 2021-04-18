@@ -206,9 +206,10 @@ def create_tensorboard_callback(dir_name, experiment_name):
     Create a TensorBoard callback for being able to track our experiments using TensorBoard.
     tensorboard_callback = create_tensorboard_callback("c:/temp/data/tensorboard", "resnet_1")
     Add into model.fit(callbacks=[tensorboard_callback])
+    The files will be stored in a directory with pattern: dir_name + "/" + experiment_name + "/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     Args:
-        dir_name: The directory the store the TensorBoard log files into.
-        experiment_name: The name of the experiment
+        dir_name: The base directory the store the TensorBoard log files into.
+        experiment_name: The name of the experiment or model. This will be appended to dir_name.
     Returns:
         The callback to be added to model.fit.
     """    
@@ -220,22 +221,26 @@ def create_tensorboard_callback(dir_name, experiment_name):
     return tensorboard_callback
 
 
-def create_model_checkpoint_callback(checkpoint_path):
+def create_model_checkpoint_callback(dir_name, experiment_name):
     """
     Create a Checkpoint callback to save the Keras model or model weights at some frequency
     The ModelCheckpoint callback periodically saves our model (the full model or just the weights) during training. 
     This is useeful so we can come and start where we left off.
     Add into model.fit(callbacks=[checkpoint_callback])
+    The files will be stored in a directory with pattern: dir_name + "/" + experiment_name
     Args:
-        checkpoint_path: The file to checkpoint to
+        dir_name: The base directory the store the checkpoints to
+        experiment_name: The name of the experiment or model. This will be appended to dir_name.
     Returns:
         The callback to be added to model.fit.
     """    
+    checkpoint_path = dir_name + "/" + experiment_name + "/" + experiment_name
     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path,
-        save_weights_only=True,
-        save_best_only=True,
+        save_weights_only=True, # If false the whole model is saved, and it takes more time to save
+        save_best_only=True, # Only save the model weights which achieved the highest accuracy
         save_freq="epoch", # Save every epoch
+        monitor="val_accuracy",
         verbose=1
     )
     return checkpoint_callback
@@ -353,7 +358,9 @@ def load_and_prep_image(url, image_shape=224, normalize_image=False):
     image_request = urllib.request.urlopen(url)
     raw_img = image_request.read()
     # Decode the read file into a tensor
-    raw_img = tf.image.decode_image(raw_img)
+    #Png usually has 4 channels (RGBA), jpg has 3 (RGB). We convert to a common 3 channels
+    #expand_animations will convert animated gifs to only have 1 frame
+    raw_img = tf.image.decode_image(raw_img, channels=3, expand_animations=False)
     # Resize the image
     prepped_img = tf.image.resize(raw_img, size=[image_shape, image_shape])
     # Rescale the image (get all values between 0 and 1)
@@ -361,6 +368,7 @@ def load_and_prep_image(url, image_shape=224, normalize_image=False):
         prepped_img = prepped_img/255.
 
     return raw_img, prepped_img
+
 
 def predict_and_plot_image(model, class_names, url, image_shape=224, normalize_image=False):
     """
@@ -380,7 +388,7 @@ def predict_and_plot_image(model, class_names, url, image_shape=224, normalize_i
 
     # Make a prediction
     pred = model.predict(tf.expand_dims(prepped_img, axis=0))
-    print(pred)
+    #print(pred)
 
     # Get the predicted class
     if len(class_names) <= 2:
