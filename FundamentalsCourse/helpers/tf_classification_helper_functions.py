@@ -6,6 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.compose import make_column_transformer
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
@@ -19,6 +20,8 @@ import pathlib
 import random
 import urllib.request
 import datetime
+import itertools
+
 
 def show_environment():    
     """
@@ -349,7 +352,7 @@ def load_and_prep_image(url, image_shape=224, normalize_image=False):
     Args:
         url: The URL to load the image from
         image_shape: The shape of the image (the same number is used for width and height)
-        normalize_image: True if you want the image normalized/rescaled so all values are between 0 and 1.
+        normalize_image: True if you want the image normalized/rescaled so all values are between 0 and 1. (divides the values by 255)
     Returns:   
         The image that was loaded from the url and resized.
     """
@@ -376,7 +379,7 @@ def predict_and_plot_image(model, class_names, url, image_shape=224, normalize_i
     class as the title.
     Args:
         model: The model to make the prediction with
-        class_name: A list of the classes that the model predicts
+        class_names: A list of the classes that the model predicts
         url: The URL to load the image from
         image_shape: The shape of the image (the same number is used for width and height)
         normalize_image: True if you want the image normalized/rescaled so all values are between 0 and 1.
@@ -394,15 +397,187 @@ def predict_and_plot_image(model, class_names, url, image_shape=224, normalize_i
     if len(class_names) <= 2:
         # For binary:
         pred_class = class_names[int(tf.round(pred))]
+        probability_pct = pred
     else:
         # For multiclass:
         pred_class = class_names[np.argmax(pred)]
+        probability_pct = tf.reduce_max(pred)
 
     # Plot the image and predicted class
     plt.figure()
     plt.imshow(raw_img)
-    plt.title(f"Prediction: {pred_class}")
+    plt.title(f"Prediction: {pred_class} ({probability_pct:.2%})")
     plt.axis(False)
+
+
+
+# Note: The following confusion matrix code is a remix of Scikit-Learn's 
+# plot_confusion_matrix function - https://scikit-learn.org/stable/modules/generated/sklearn.metrics.plot_confusion_matrix.html
+# Our function needs a different name to sklearn's plot_confusion_matrix
+def make_confusion_matrix(y_true, y_pred, class_names=None, figsize=(10, 10), text_size=15, norm=False, savefig=False): 
+    """
+    Makes a labelled confusion matrix comparing predictions and ground truth labels.
+
+    If class_names is passed, confusion matrix will be labelled, if not, integer class values
+    will be used.
+
+    Args:
+    y_true: Array of truth labels (must be same shape as y_pred).
+    y_pred: Array of predicted labels (must be same shape as y_true).
+    class_names: Array of class labels (e.g. string form). If `None`, integer labels are used.
+    figsize: Size of output figure (default=(10, 10)).
+    text_size: Size of output figure text (default=15).
+    norm: normalize values or not (default=False).
+    savefig: save confusion matrix to file (default=False).
+
+    Returns:
+    A labelled confusion matrix plot comparing y_true and y_pred.
+
+    Example usage:
+    make_confusion_matrix(y_true=test_labels, # ground truth test labels
+                            y_pred=y_preds, # predicted labels
+                            class_names=class_names, # array of class label names
+                            figsize=(15, 15),
+                            text_size=10)
+    """  
+    # Create the confustion matrix
+    cm = confusion_matrix(y_true, y_pred)
+    cm_norm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis] # normalize it
+    n_classes = cm.shape[0] # find the number of classes we're dealing with
+
+    # Plot the figure and make it pretty
+    fig, ax = plt.subplots(figsize=figsize)
+    cax = ax.matshow(cm, cmap=plt.cm.Blues) # colors will represent how 'correct' a class is, darker == better
+    fig.colorbar(cax)
+
+    # Are there a list of classes?
+    if class_names:
+        labels = class_names
+    else:
+        labels = np.arange(cm.shape[0])
+
+    # Label the axes
+    ax.set(title="Confusion Matrix",
+            xlabel="Predicted label",
+            ylabel="True label",
+            xticks=np.arange(n_classes), # create enough axis slots for each class
+            yticks=np.arange(n_classes), 
+            xticklabels=labels, # axes will labeled with class names (if they exist) or ints
+            yticklabels=labels)
+
+    #Set label font sizes
+    ax.title.set_fontsize(text_size)
+    ax.xaxis.get_label().set_fontsize(text_size)
+    ax.yaxis.get_label().set_fontsize(text_size)
+
+    # Make x-axis labels appear on bottom
+    ax.xaxis.set_label_position("bottom")
+    ax.xaxis.tick_bottom()
+
+    # Change the xaxis to plot x-labels vertically
+    plt.xticks(rotation=70, fontsize=text_size)
+    plt.yticks(fontsize=text_size)
+
+    # Set the threshold for different colors
+    threshold = (cm.max() + cm.min()) / 2.
+
+    # Plot the text on each cell
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        if norm:
+            plt.text(j, i, f"{cm[i, j]} ({cm_norm[i, j]*100:.1f}%)",
+                    horizontalalignment="center",
+                    color="white" if cm[i, j] > threshold else "black",
+                    size=text_size)
+        else:
+            plt.text(j, i, f"{cm[i, j]}",
+                    horizontalalignment="center",
+                    color="white" if cm[i, j] > threshold else "black",
+                    size=text_size)
+
+    # Save the figure to the current working directory
+    if savefig:
+        fig.savefig("confusion_matrix.png")
+
+
+
+def plot_classification_report(y_true, y_pred, class_names, figsize=(10, 10), text_size=15, metric="f1-score"):
+    """
+    Visualize a classification report for our predictions.
+    Scikit learn has a helpful function for acquiring many different classification metrics per class (eg precision, recall, and F1) called classification report. This method will plot those.
+
+    Here are various classification model evaluation methods:
+        - Accuracy - default metric for classification. Not the best for imbalanced classes.
+        - Precision - higher precision leads to less false positives
+        - Recall - higher recall leads to less false negatives
+        - F1-Score - combination of precision and recall, usually a good overall metric for a classification model
+        - Confusion matrix - When comparing predictions to truth labels to see where model gets confused. Can be hard to use with large numbers of classes.    
+    Args:
+        y_true: A list of the ground truth labels
+        y_pred: A list of the predicted labels
+        class_names: A list of the classes that the model predicts
+        figsize: Size of output figure (default=(10, 10)).
+        text_size: Size of output figure text (default=15).        
+        metric: One of precision, recall, f1-score. Defaults to f1-score
+    Returns:
+        
+    """      
+    # Get a dictionary of the classification report
+    classification_report_dict = classification_report(y_true=y_true, y_pred=y_pred, output_dict=True)
+    #print(classification_report_dict)
+
+    # Plot all of the classes F1 Scores
+    # Create empty dictionary
+    class_metrics = {}
+    # Loop through the classification report dictionary items
+    for k, v in classification_report_dict.items():
+        # stop once we get to the end of the classification report keys that are for the overall totals
+        if k == "accuracy" or \
+           k == "macro avg" or \
+           k == "weighted avg": 
+            break
+        else:
+            # Add class names and F1 scores to new dictionary            
+            class_metrics[class_names[int(k)]] = v[metric]
+    
+    #print(class_metrics)
+    
+    # Turn F1 scores into dataframe for visualization
+    metrics = pd.DataFrame({
+        "class_names": list(class_metrics.keys()),
+        metric: list(class_metrics.values())
+    }).sort_values(metric, ascending=False)
+    #print(metrics)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    scores = ax.barh(
+        range(len(metrics)), 
+        metrics[metric].values,
+        color="#ccc"
+    )
+
+    ax.set_yticks(range(len(metrics)))
+    ax.set_yticklabels(metrics["class_names"], fontsize=text_size)
+    
+    ax.set_xlabel(metric, fontsize=text_size)
+    ax.set_title(f"{metric} by Class", fontsize=text_size)
+    ax.invert_yaxis() # reverse the order of the y axis so highest score in on top
+
+    #Set label font sizes
+    plt.xticks(fontsize=text_size)
+
+    #Attach a text label above each bar displaying its height
+    #TODO, take from https://matplotlib.org/2.0.2/examples/api/barchart_demo.html.See the autolabel function
+    for rect in scores:
+        width = rect.get_width()
+        #print(width)
+        ax.text(width, rect.get_y() + rect.get_height()/2.,
+                f"{width:0.3}",
+                va='center', 
+                ha='right',
+                color="black")
+
+
+
 
 
 if __name__ == "__main__":
