@@ -137,7 +137,7 @@ def view_random_images_from_tf_dataset(dataset, class_names, batches=-1, num_ima
     From the tensorflow dataset, randomly select images and show them. Up to num_images with be shown.
 
     Args:
-        dataset: The data set o get the images from
+        dataset: The TensorFlow DataSet to get the images from
         class_names: The names of the image classes.
         batches: The number of batches to take from the dataset. Usually you'll have batches containing 32 images each. 
                  -1 will pick from all batches
